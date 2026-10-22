@@ -24,8 +24,27 @@ epr_state_root() {
   printf '%s\n' "${EXPLAIN_PR_HOME:-$HOME/.claude/explain-pr}"
 }
 
-# "owner/repo" -> "owner-repo". Empty if this is not a GitHub repo we can see.
+# "owner/repo" -> "owner-repo". Read from the remote URL, with no network call: this runs
+# on every session start, and `gh repo view` can block on a keychain prompt or a slow link.
+# Falls back to gh only when the URL cannot be parsed.
 epr_repo_slug() {
+  local url s repo rest owner
+  url=$(git config --get remote.origin.url 2>/dev/null)
+  if [[ -n "$url" ]]; then
+    s=${url%.git}; s=${s%/}
+    s=${s#*://}        # strip any scheme
+    s=${s#*@}          # strip user@
+    s=${s/:/\/}        # scp form host:owner/repo -> host/owner/repo (first colon only)
+    if [[ "$s" == */*/* || "$s" == */* ]]; then
+      repo=${s##*/}
+      rest=${s%/*}
+      owner=${rest##*/}
+      if [[ -n "$owner" && -n "$repo" && "$owner" != "$repo" ]]; then
+        printf '%s\n' "$owner-$repo"
+        return 0
+      fi
+    fi
+  fi
   gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null | tr '/' '-'
 }
 
