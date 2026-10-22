@@ -52,7 +52,7 @@ and this push is part of it, ignore this message."
 # Use one form or the other, not both.
 jq -n \
   --arg ctx "$context" \
-  --arg msg "explain-pr : review draft to refresh on #${number}" \
+  --arg msg "explain-pr: review draft to refresh on #${number}" \
   '{
      systemMessage: $msg,
      hookSpecificOutput: {

@@ -7,9 +7,9 @@ for it.
 It ships a skill you can call yourself, plus a hook that re-runs it for you after a push.
 The output is a **review draft, visible only to you**. Nothing is ever published to the PR.
 
-> **Status: not installable yet.** `skills/explain-pr/SKILL.md` is still missing, so the hook
-> would ask Claude to run a skill that does not exist. Don't install this until that file
-> lands.
+> **Status: not installable yet.** Three of the four scripts the skill calls are still
+> missing: `scripts/anchor.sh`, `scripts/check.py` and `scripts/review.py`. Until they land,
+> the skill loads but every step fails. Don't install this yet.
 
 ## Install
 
@@ -21,14 +21,28 @@ The output is a **review draft, visible only to you**. Nothing is ever published
 The name after `@` is the marketplace name declared in `.claude-plugin/marketplace.json`,
 not the repository name.
 
-Requires `git`, [`gh`](https://cli.github.com/) (authenticated) and `jq` on your `PATH`.
+Requires `git`, [`gh`](https://cli.github.com/) (authenticated), `jq`, `python3` and
+`shasum` on your `PATH`.
 
 ## Use
 
+Run it at the end of a dev session, **in the conversation that wrote the code** — that
+conversation is where the intent lives, and it is the one thing the diff cannot tell you.
+
 ```
-/explain-pr:explain-pr          # walk me through the current PR
-/explain-pr:explain-pr auto     # recompute and replace the review draft, no questions
+/explain-pr:explain-pr            # preview: drop a review draft only you can see
+/explain-pr:explain-pr publish    # carry on to publication, still asking first
+/explain-pr:explain-pr auto       # refresh the draft without asking (what the hook sends)
+/explain-pr:explain-pr preview main   # force the base branch
 ```
+
+What lands in the draft: the intent in a few lines, a reading order as deep links into
+Files changed, the risky areas versus the mechanical ones, a decision log that separates
+what the requirement imposed from what the agent decided on its own, a Mermaid diagram
+when a flow crosses several files, and 3 to 8 comments on the key lines explaining why
+they are the way they are.
+
+Every link and every cited line is checked against the diff before anything is dropped.
 
 ## What the hook does
 
@@ -100,9 +114,17 @@ explain-pr/
 │   ├── plugin.json
 │   └── marketplace.json      this repo is its own marketplace
 ├── hooks/hooks.json
-├── scripts/hook.sh
+├── scripts/
+│   ├── hook.sh               PostToolUse hook
+│   ├── anchor.sh             deep-link builder
+│   ├── check.py              map + verify links and comments against the diff
+│   └── review.py             GitHub review draft: find / draft / submit / discard
 └── skills/explain-pr/SKILL.md
 ```
+
+Working files (`body.md`, `review.json`) are written to
+`~/.claude/explain-pr/<owner>-<repo>/<branch>/`, outside your repository and outside the
+plugin, so they survive a plugin update.
 
 ## License
 
