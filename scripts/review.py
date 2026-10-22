@@ -13,8 +13,27 @@ notification, tant qu'il n'est pas soumis.
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
+
+
+def record_head(body_path, commit_id):
+    """Write the narrated head next to body.md, as last-head.
+
+    The SessionStart catch-up hook compares the PR's current head against these files to
+    decide whether the draft is stale. Recording it here rather than asking the model to
+    do it keeps the two in step. Best effort: never fail a successful draft over this.
+    """
+    if not body_path or not commit_id:
+        return
+    try:
+        state_dir = os.path.dirname(os.path.abspath(body_path))
+        os.makedirs(state_dir, exist_ok=True)
+        with open(os.path.join(state_dir, "last-head"), "w", encoding="utf-8") as fh:
+            fh.write(commit_id + "\n")
+    except OSError as exc:
+        print(f"note : head non enregistré ({exc})", file=sys.stderr)
 
 
 def gh(method, path, payload=None):
@@ -58,6 +77,7 @@ def main():
         review.pop("event", None)  # sans event, la review reste PENDING
         review["body"] = open(a.body, encoding="utf-8").read()
         r = gh("POST", base, review)
+        record_head(a.body, review.get("commit_id"))
         print(f"brouillon {r['id']} ({r['state']}) : https://github.com/{a.repo}/pull/{a.pr}/files")
         return
 

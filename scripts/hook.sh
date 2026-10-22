@@ -30,6 +30,12 @@ dir=${dir//\"/}; dir=${dir//\'/}; dir=${dir/#\~/$HOME}
 [[ -n "$dir" ]] && { cd "$dir" 2>/dev/null || exit 0; }
 [[ -z "$cwd" && -z "$dir" ]] && exit 0
 
+# Per-repository opt-in. Nothing happens unless explain-pr.enabled is true in this clone.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SELF_DIR/common.sh"
+epr_enabled || exit 0
+
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
 pr=$(gh pr view --json number,state,url -q 'select(.state == "OPEN") | "\(.number) \(.url)"' 2>/dev/null) || exit 0
 [[ -z "$pr" ]] && exit 0

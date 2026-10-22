@@ -23,9 +23,12 @@ Two rules override everything else:
    user in the chat, for that action.
 
 Arguments: `preview` (default) stops at the review draft. `publish` carries on to
-publication, still asking for confirmation before anything goes out. `auto` is passed
-by `scripts/hook.sh` after a push on a branch with an open PR: see "Auto mode" in § 6.
-A second argument forces the base branch.
+publication, still asking for confirmation before anything goes out. `auto` is sent by the
+hooks: see "Auto mode" in § 6. A second argument forces the base branch.
+
+The hooks only act in a repository where the user opted in with
+`git config --bool explain-pr.enabled true`. A manual run is never gated: if the user types
+the skill themselves, do the work, whatever the flag says.
 
 ## Scripts
 
@@ -228,8 +231,13 @@ story is its body, the comments sit on their lines in the Files changed tab, and
 Mermaid and the deep links render there exactly as the reviewer will see them.
 
 The working files (`body.md`, `review.json`) go in
-`~/.claude/explain-pr/<owner>-<repo>/<branch-slug>/`, outside the repository. They are
-not deliverables: do not show them to the user as the preview.
+`~/.claude/explain-pr/<owner>-<repo>/<branch-slug>/`, outside the repository. `<branch-slug>`
+is the branch name with `/` replaced by `-`. They are not deliverables: do not show them to
+the user as the preview.
+
+`review.py draft` writes the narrated head to `last-head` in that same directory, from the
+`commit_id` of `review.json`. The SessionStart catch-up hook reads those files to decide
+whether the draft is stale, so do not write `last-head` by hand and do not delete it.
 
 1. Ask once: "Shall I drop a review draft on #N, visible only to you?" It is a write to
    the repository, even one invisible to others: it waits for a yes.
@@ -247,8 +255,11 @@ not deliverables: do not show them to the user as the preview.
 4. Corrections: edit `body.md` / `review.json`, `discard`, then `draft` again (simpler
    than editing comment by comment).
 
-**Auto mode** (argument `auto`, sent by the hook this plugin installs): agreement for
-the draft is given once and for all by that hook. So, without asking anything:
+**Auto mode** (argument `auto`, sent by one of this plugin's hooks): agreement for the
+draft is given once and for all by enabling explain-pr on the repository. Three hooks send
+it — the PostToolUse one after a push Claude made, the SessionStart one when the PR moved
+outside Claude, and the pre-push one in headless mode. All three pass the scripts directory
+in their message. So, without asking anything:
 
 1. redo § 1 to 5 against the PR's new head (read the commits added since the last run,
    reuse the previous story from `~/.claude/explain-pr/…/body.md` as a starting point

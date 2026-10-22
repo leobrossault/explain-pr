@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# git pre-push hook, installed per repository by `explain-pr-ctl headless-on`.
+#
+# Headless path: refresh the review draft after a push you made yourself, with no Claude
+# session open. Only acts when BOTH flags are true:
+#   explain-pr.enabled  and  explain-pr.headless
+#
+# It never blocks or slows the push: the work is detached into headless-refresh.sh.
+# Any pre-existing pre-push hook (husky, lefthook) was renamed by the installer to
+# pre-push.explain-pr-previous; it runs first, with this hook's stdin, and its exit code
+# is what git sees, so it can still reject the push.
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_SCRIPTS="__PLUGIN_SCRIPTS__"
+
+# git feeds "<local_ref> <local_sha> <remote_ref> <remote_sha>" lines on stdin, and a hook
+# can only read them once. Capture, then hand the same bytes to the previous hook.
+refs=$(cat)
+
+previous="$HOOK_DIR/pre-push.explain-pr-previous"
+if [[ -x "$previous" ]]; then
+  printf '%s' "$refs" | "$previous" "$@" || exit $?
+fi
+
+[[ -f "$PLUGIN_SCRIPTS/common.sh" ]] || exit 0
+# shellcheck source=/dev/null
+source "$PLUGIN_SCRIPTS/common.sh"
+
+epr_enabled || exit 0
+epr_headless || exit 0
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
+
+# The sha being pushed for the current branch; fall back to the last line. Skip deletions,
+# whose local sha is all zeroes.
+local_sha=$(awk -v b="refs/heads/$branch" '$1 == b { print $2 }' <<<"$refs" | tail -1)
+[[ -z "$local_sha" ]] && local_sha=$(awk 'NF >= 2 { print $2 }' <<<"$refs" | tail -1)
+[[ -z "$local_sha" || "$local_sha" =~ ^0+$ ]] && exit 0
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+slug=$(epr_repo_slug)
+log="$(epr_state_root)/${slug:-unknown}/headless.log"
+
+worker="$PLUGIN_SCRIPTS/headless-refresh.sh"
+[[ -f "$worker" ]] || exit 0
+
+if command -v setsid >/dev/null 2>&1; then
+  setsid bash "$worker" "$repo_root" "$local_sha" "$log" </dev/null >/dev/null 2>&1 &
+else
+  ( bash "$worker" "$repo_root" "$local_sha" "$log" </dev/null >/dev/null 2>&1 & )
+fi
+disown 2>/dev/null || true
+
+exit 0

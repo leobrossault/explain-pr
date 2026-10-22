@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Turn explain-pr on or off for the repository you are standing in.
+#
+#   explain-pr-ctl status         what is on here, and why
+#   explain-pr-ctl on             enable for this repo
+#   explain-pr-ctl off            disable for this repo (keeps the headless flag)
+#   explain-pr-ctl headless-on    also refresh after a push you make by hand
+#   explain-pr-ctl headless-off   stop that, and remove the git hook
+#
+# Both flags live in this clone's .git/config: per project, never committed, invisible to
+# collaborators.
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SELF_DIR/common.sh"
+
+die() { printf 'explain-pr: %s\n' "$1" >&2; exit 1; }
+
+git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repository"
+HOOKS_DIR="$(git rev-parse --git-path hooks)"
+
+install_git_hook() {
+  mkdir -p "$HOOKS_DIR"
+  local target="$HOOKS_DIR/pre-push"
+  local kept="$HOOKS_DIR/pre-push.explain-pr-previous"
+
+  if [[ -e "$target" ]] && ! grep -q 'explain-pr' "$target" 2>/dev/null; then
+    [[ -e "$kept" ]] && die "$kept already exists; sort that out first, I will not overwrite it"
+    mv "$target" "$kept"
+    chmod +x "$kept"
+    printf 'kept your existing pre-push as %s; it will run first\n' "$(basename "$kept")"
+  fi
+
+  sed "s#__PLUGIN_SCRIPTS__#$SELF_DIR#" "$SELF_DIR/pre-push" > "$target"
+  chmod +x "$target"
+  printf 'installed %s\n' "$target"
+
+  local hp
+  hp=$(git config --get core.hooksPath 2>/dev/null || true)
+  if [[ -n "$hp" ]]; then
+    printf 'warning: core.hooksPath is set to %s, so git may not run %s at all.\n' "$hp" "$target" >&2
+    printf '         husky and lefthook do this. Install the hook into that directory instead.\n' >&2
+  fi
+}
+
+remove_git_hook() {
+  local target="$HOOKS_DIR/pre-push"
+  local kept="$HOOKS_DIR/pre-push.explain-pr-previous"
+  if [[ -e "$target" ]] && grep -q 'explain-pr' "$target" 2>/dev/null; then
+    rm -f "$target"
+    printf 'removed %s\n' "$target"
+    if [[ -e "$kept" ]]; then
+      mv "$kept" "$target"
+      chmod +x "$target"
+      printf 'restored your previous pre-push\n'
+    fi
+  fi
+}
+
+case "${1:-status}" in
+  on)
+    git config --bool explain-pr.enabled true
+    printf 'explain-pr: on for %s\n' "$(git rev-parse --show-toplevel)"
+    ;;
+  off)
+    git config --bool explain-pr.enabled false
+    printf 'explain-pr: off for %s\n' "$(git rev-parse --show-toplevel)"
+    ;;
+  headless-on)
+    git config --bool explain-pr.enabled true
+    git config --bool explain-pr.headless true
+    install_git_hook
+    printf 'explain-pr: on, and refreshing after your own pushes too\n'
+    ;;
+  headless-off)
+    git config --bool explain-pr.headless false
+    remove_git_hook
+    printf 'explain-pr: no longer refreshing after your own pushes\n'
+    ;;
+  status)
+    printf 'repo        %s\n' "$(git rev-parse --show-toplevel)"
+    printf 'enabled     %s\n' "$(git config --bool --get explain-pr.enabled 2>/dev/null || echo 'false (unset)')"
+    printf 'headless    %s\n' "$(git config --bool --get explain-pr.headless 2>/dev/null || echo 'false (unset)')"
+    printf 'pre-push    %s\n' "$( [[ -e "$HOOKS_DIR/pre-push" ]] && grep -ql 'explain-pr' "$HOOKS_DIR/pre-push" 2>/dev/null && echo installed || echo 'not installed' )"
+    slug=$(epr_repo_slug)
+    printf 'state       %s\n' "$(epr_state_root)/${slug:-<unknown repo>}"
+    if [[ -n "$slug" ]]; then
+      shopt -s nullglob
+      for f in "$(epr_state_root)/$slug"/*/last-head; do
+        printf 'narrated    %s  %s\n' "$(tr -d '[:space:]' <"$f" | cut -c1-7)" "$(basename "$(dirname "$f")")"
+      done
+    fi
+    ;;
+  *)
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac

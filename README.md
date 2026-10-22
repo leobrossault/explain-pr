@@ -40,10 +40,72 @@ they are the way they are.
 
 Every link and every cited line is checked against the diff before anything is dropped.
 
-## What the hook does
+## Turning it on, per project
 
-`hooks/hooks.json` registers a `PostToolUse` hook on `Bash`. The full contents, so you can
-read it before you install rather than after:
+Nothing happens until you opt a repository in. The flags live in that clone's own
+`.git/config`, so they are per project, never committed, and invisible to collaborators.
+
+```bash
+explain-pr-ctl on            # refresh the draft after a push Claude makes, and catch up
+                             # at session start if the PR moved without Claude
+explain-pr-ctl headless-on   # also refresh after a push you make yourself, with no
+                             # Claude session open
+explain-pr-ctl off
+explain-pr-ctl headless-off
+explain-pr-ctl status        # what is on here, and which heads have been narrated
+```
+
+Put it on your `PATH` once:
+
+```bash
+ln -s ~/.claude/plugins/cache/*/explain-pr/*/scripts/explain-pr-ctl ~/.local/bin/explain-pr-ctl
+```
+
+That symlink points at one installed version, so re-run it after an update. Or skip it and
+set the flags by hand: `git config --bool explain-pr.enabled true`.
+
+## The three ways it fires
+
+| Hook | Fires when | Needs |
+|---|---|---|
+| `PostToolUse` | Claude ran `git push` or `gh pr create` and the branch has an open PR | `enabled` |
+| `SessionStart` | you open a session and the PR's head is one no narrative covers | `enabled` |
+| `pre-push` (git) | you push yourself, from any terminal | `enabled` + `headless` |
+
+The first two cost nothing when there is nothing to do. The `SessionStart` one compares
+state rather than listening for an event, so it catches a push you made by hand, a PR you
+opened yourself, and even a push from another machine — and it fires once per new head, not
+once per session.
+
+The headless one is the only path that spends tokens with nobody watching: it runs
+`claude -p` in the background. It waits until GitHub actually reports the pushed commit as
+the PR head before starting, so a rejected push costs nothing, and gives up after 90
+seconds. Its log is `~/.claude/explain-pr/<owner>-<repo>/headless.log`. Two knobs:
+
+```bash
+git config explain-pr.claudeArgs "--permission-mode acceptEdits"   # passed to claude -p
+git config explain-pr.headlessTimeout 120                          # seconds to wait
+```
+
+A `claude -p` run needs whatever permissions your setup requires to use Bash; if the log
+shows it exiting without doing anything, that is the first thing to look at.
+
+### If your repo already has a pre-push hook
+
+`explain-pr-ctl headless-on` renames it to `pre-push.explain-pr-previous` and calls it first,
+with the same stdin, and returns its exit code — so husky or lefthook can still reject the
+push. `headless-off` puts it back. If `core.hooksPath` is set, git may not run
+`.git/hooks/pre-push` at all; the installer warns you, and the hook has to go in that
+directory instead.
+
+## What the hooks read
+
+They read the command Claude ran, or the state of the PR. They never write to your
+repository, never push, never comment. The review draft is a GitHub review in state
+`PENDING`: visible only to you, notifying nobody, deleted without a trace. Publishing is a
+separate step that always asks.
+
+`hooks/hooks.json` in full, so you can read it before you install rather than after:
 
 ```json
 {
@@ -52,11 +114,14 @@ read it before you install rather than after:
       {
         "matcher": "Bash",
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"",
-            "timeout": 20
-          }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"", "timeout": 20 }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"", "timeout": 20 }
         ]
       }
     ]
@@ -64,26 +129,8 @@ read it before you install rather than after:
 }
 ```
 
-`scripts/hook.sh` reads the Bash command Claude just ran and **exits immediately unless** the
-command contains a `git push` or a `gh pr create`. Only then does it touch your repository, and
-only to read: `git rev-parse` for the branch name and `gh pr view` for the PR state. If the
-branch has an open PR, it asks Claude to re-run the skill in `auto` mode.
-
-It deliberately does nothing on `--delete` / `-d`, `--tags`, `--dry-run` / `-n`, or when the
-branch has no open PR.
-
-It writes nothing, pushes nothing and comments nothing. Read `scripts/hook.sh` — it is about
-forty lines.
-
-## Scope, and why it matters
-
-Hooks installed by a plugin are **active in every session, in every project**, not just the
-repository you set them up in. That is wider than wiring the hook into a single project's
-`.claude/settings.local.json`, which is what it replaces.
-
-If you previously declared this hook by hand in `.claude/settings.json` or
-`.claude/settings.local.json`, **remove that entry**. Plugin hooks merge with project and user
-hooks, so leaving both in place runs the hook twice on every push.
+Both exit immediately unless the repository is opted in. Read `scripts/` — the longest file
+is under eighty lines.
 
 ## How the skill finds its scripts
 
@@ -127,10 +174,15 @@ explain-pr/
 │   └── marketplace.json      this repo is its own marketplace
 ├── hooks/hooks.json
 ├── scripts/
-│   ├── hook.sh               PostToolUse hook
+│   ├── common.sh             the two flags, state paths, "already narrated?"
+│   ├── explain-pr-ctl        on / off / headless-on / headless-off / status
+│   ├── hook.sh               PostToolUse: a push Claude made
+│   ├── session-start.sh      SessionStart: the PR moved without Claude
+│   ├── pre-push              git hook template for headless mode
+│   ├── headless-refresh.sh   detached worker behind pre-push
 │   ├── anchor.sh             deep-link builder
 │   ├── check.py              map + verify links and comments against the diff
-│   └── review.py             GitHub review draft: find / draft / submit / discard
+│   └── review.py             review draft: find / draft / submit / discard
 └── skills/explain-pr/SKILL.md
 ```
 
