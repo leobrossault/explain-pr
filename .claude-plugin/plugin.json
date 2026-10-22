@@ -1,0 +1,13 @@
+{
+  "name": "explain-pr",
+  "version": "0.1.0",
+  "description": "Walks you through an open pull request and flags what deserves a closer look, so you understand what the agent actually changed.",
+  "author": {
+    "name": "Leo Brossault"
+  },
+  "keywords": [
+    "pull-request",
+    "code-review",
+    "github"
+  ]
+}

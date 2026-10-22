@@ -1,0 +1,14 @@
+{
+  "name": "lbrossault-tools",
+  "owner": {
+    "name": "Leo Brossault"
+  },
+  "description": "Personal Claude Code tools.",
+  "plugins": [
+    {
+      "name": "explain-pr",
+      "source": ".",
+      "description": "Walks you through an open pull request and flags what deserves a closer look."
+    }
+  ]
+}
