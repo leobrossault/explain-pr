@@ -7,10 +7,6 @@ for it.
 It ships a skill you can call yourself, plus a hook that re-runs it for you after a push.
 The output is a **review draft, visible only to you**. Nothing is ever published to the PR.
 
-> **Status: not installable yet.** Three of the four scripts the skill calls are still
-> missing: `scripts/anchor.sh`, `scripts/check.py` and `scripts/review.py`. Until they land,
-> the skill loads but every step fails. Don't install this yet.
-
 ## Install
 
 ```bash
