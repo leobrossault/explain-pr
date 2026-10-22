@@ -35,7 +35,16 @@ pr=$(gh pr view --json number,state,url -q 'select(.state == "OPEN") | "\(.numbe
 [[ -z "$pr" ]] && exit 0
 number=${pr%% *}
 
+# CLAUDE_PLUGIN_ROOT is exported to hook processes but NOT to a skill's own Bash calls,
+# so hand the resolved scripts directory to the skill rather than making it look.
+scripts_dir="${CLAUDE_PLUGIN_ROOT:-}"
+[[ -n "$scripts_dir" ]] && scripts_dir="${scripts_dir%/}/scripts"
+[[ -n "$scripts_dir" && -f "$scripts_dir/check.py" ]] \
+  && where="Its scripts are in ${scripts_dir} (resolved from CLAUDE_PLUGIN_ROOT); use that path and do not look for them." \
+  || where="CLAUDE_PLUGIN_ROOT was not set for this hook, so resolve the scripts directory as the skill describes."
+
 context="explain-pr hook: branch ${branch} was pushed and PR #${number} is open. \
+${where} \
 Run the explain-pr:explain-pr skill now with the argument \"auto\" on that PR: recompute the \
 walkthrough and the comments against the new head, replace the review draft (visible only to \
 the current user) without asking again, publish nothing. If you are already running explain-pr \

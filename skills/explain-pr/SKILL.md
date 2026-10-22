@@ -29,14 +29,30 @@ A second argument forces the base branch.
 
 ## Scripts
 
-They live in this plugin's `scripts/` directory. Resolve it **once**, at the start, and
-then use the absolute path literally in every later command:
+They live in this plugin's `scripts/` directory. **`CLAUDE_PLUGIN_ROOT` is not available
+here** — it is exported to hook processes, not to a skill's Bash calls — so resolve the
+directory **once**, as the first command of the run, and then use the absolute path
+literally in every later command:
 
 ```bash
-echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/explain-pr}"
+SCRIPTS=$(ls -d "$HOME"/.claude/plugins/cache/*/explain-pr/*/scripts 2>/dev/null | sort -V | tail -1)
+[ -n "$SCRIPTS" ] || SCRIPTS=$(ls -d "$HOME"/.claude/skills/explain-pr/scripts 2>/dev/null)
+echo "${SCRIPTS:-NOT_FOUND}"
 ```
 
-(The fallback covers an older install as a personal skill rather than a plugin.)
+The installed plugin lives at `~/.claude/plugins/cache/<marketplace>/explain-pr/<version>/`,
+so the path moves on every version bump; `sort -V | tail -1` picks the newest. This
+deliberately ignores `~/.claude/plugins/marketplaces/<marketplace>/`, which is a full clone
+of the repository and holds a second copy of `scripts/` that the installed plugin does not
+run.
+
+In `auto` mode the hook passes the directory in its message. Use the path it gives and skip
+the resolution entirely.
+
+If the resolution lands on the `~/.claude/skills/` fallback, the plugin is not installed and
+these are leftovers from a personal-skill install: **say so in one line** before carrying on,
+so the user knows which copy is running. If it prints `NOT_FOUND`, stop and say the scripts
+are missing.
 
 - `anchor.sh <owner/repo> <pr> <path> <line> [R|L] [end_line]` → deep link URL. The
   anchor is `diff-<sha256 hex of the path>` (`shasum -a 256`), then `R<n>` (new file)

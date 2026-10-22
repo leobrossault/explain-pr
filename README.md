@@ -85,6 +85,22 @@ If you previously declared this hook by hand in `.claude/settings.json` or
 `.claude/settings.local.json`, **remove that entry**. Plugin hooks merge with project and user
 hooks, so leaving both in place runs the hook twice on every push.
 
+## How the skill finds its scripts
+
+`CLAUDE_PLUGIN_ROOT` is exported to hook processes but **not** to the Bash calls a skill
+makes, so the skill cannot read it. Two paths, depending on how it was started:
+
+- Started by the hook (`auto`): the hook resolves `CLAUDE_PLUGIN_ROOT` itself and passes the
+  absolute `scripts/` directory in its message. Nothing to look up.
+- Started by hand: the skill resolves it once, with
+  `ls -d ~/.claude/plugins/cache/*/explain-pr/*/scripts | sort -V | tail -1`. The installed
+  plugin lives under a versioned directory, so the path moves on every bump and `sort -V`
+  picks the newest.
+
+Note that `~/.claude/plugins/marketplaces/<marketplace>/` is a full clone of this repository
+and holds a second copy of `scripts/`. It is not what the installed plugin runs, and the
+resolution above ignores it on purpose.
+
 ## Development
 
 ```bash
